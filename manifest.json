@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "iain.corsair-power",
+  "name": "Corsair Power Mode",
+  "version": "1.0.0",
+  "author": "iain",
+  "description": "AXB35 EC power mode (front button) and live APU package power",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Corsair Power Mode",
+    "description": "Front-button power mode and live APU watts",
+    "category": "System",
+    "allowMultiple": false
+  }
+}

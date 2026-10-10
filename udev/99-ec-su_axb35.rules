@@ -1,0 +1,2 @@
+ACTION=="add", SUBSYSTEM=="ec_su_axb35", KERNEL=="apu", RUN+="/usr/bin/chmod 0666 /sys%p/power_mode"
+ACTION=="add", SUBSYSTEM=="ec_su_axb35", KERNEL=="fan[123]", RUN+="/usr/bin/chmod 0666 /sys%p/mode /sys%p/level /sys%p/rampup_curve /sys%p/rampdown_curve"

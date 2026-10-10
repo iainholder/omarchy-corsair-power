@@ -1,0 +1,78 @@
+#!/bin/bash
+# Corsair AI Workstation 300 fan control.
+#   corsair-fans floor <0-5>   minimum fan level; hotter temps still ramp higher
+#                              0 = EC automatic, 5 = full speed
+#   corsair-fans up|down       raise/lower the floor by one
+#   corsair-fans max|auto|toggle
+#   corsair-fans status        prints the current floor (0-5)
+#
+# Floors 1-4 use the driver's curve mode: the thresholds for every level up to
+# the floor are set to 0°C, so the fan can't step below it but still follows
+# the normal curve above it.
+ec=/sys/class/ec_su_axb35
+
+# Driver default curves (level 1..5 thresholds in °C), per fan.
+declare -A up=([1]="60 70 83 95 97" [2]="60 70 83 95 97" [3]="20 60 83 95 97")
+declare -A down=([1]="40 50 80 94 96" [2]="40 50 80 94 96" [3]="0 50 80 94 96")
+
+fail() {
+  omarchy-notification-send "Fan control failed" "No permission to write $ec. Install the ec_su_axb35 udev rule." 2>/dev/null
+  echo "No permission to write $ec (install the udev rule)" >&2
+  exit 1
+}
+
+floored_curve() { # <floor> <thresholds...>
+  local floor=$1 i=1 t out=()
+  shift
+  for t in "$@"; do
+    if ((i <= floor)); then out+=(0); else out+=("$t"); fi
+    ((i++))
+  done
+  local IFS=,
+  echo "${out[*]}"
+}
+
+# Floor is read from fan1, whose default rampdown curve has no zero entries,
+# so the count of leading zeros is exactly the floor we wrote.
+status() {
+  case $(<"$ec/fan1/mode") in
+    auto) echo 0 ;;
+    fixed) echo 5 ;;
+    *)
+      local curve n=0
+      IFS=, read -ra curve <"$ec/fan1/rampdown_curve"
+      for t in "${curve[@]}"; do [[ $t == 0 ]] && ((n++)) || break; done
+      echo "$n"
+      ;;
+  esac
+}
+
+set_floor() {
+  local floor=$1 f
+  [[ $floor =~ ^[0-5]$ ]] || { echo "floor must be 0-5" >&2; exit 2; }
+  for f in 1 2 3; do
+    [[ -w $ec/fan$f/mode ]] || fail
+    if ((floor == 0)); then
+      echo auto >"$ec/fan$f/mode"
+    elif ((floor == 5)); then
+      echo fixed >"$ec/fan$f/mode" && echo 5 >"$ec/fan$f/level"
+    else
+      [[ -w $ec/fan$f/rampup_curve ]] || fail
+      floored_curve "$floor" ${up[$f]} >"$ec/fan$f/rampup_curve"
+      floored_curve "$floor" ${down[$f]} >"$ec/fan$f/rampdown_curve"
+      echo curve >"$ec/fan$f/mode"
+    fi
+  done
+}
+
+case ${1:-status} in
+  floor) set_floor "${2:?usage: corsair-fans floor <0-5>}" ;;
+  up) cur=$(status); ((cur < 5)) && set_floor $((cur + 1)) ;;
+  down) cur=$(status); ((cur > 0)) && set_floor $((cur - 1)) ;;
+  max) set_floor 5 ;;
+  auto) set_floor 0 ;;
+  toggle) if [[ $(status) == 5 ]]; then set_floor 0; else set_floor 5; fi ;;
+  status) status ;;
+  *) echo "usage: corsair-fans floor <0-5>|up|down|max|auto|toggle|status" >&2; exit 2 ;;
+esac
+exit 0

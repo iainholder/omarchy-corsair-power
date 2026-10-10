@@ -1,0 +1,41 @@
+#!/bin/bash
+# Prints one JSON line describing the AXB35 (Corsair AI Workstation 300) power state.
+# Power mode comes from the ec_su_axb35 driver (EC register 0x31, set by the front button).
+
+ec=/sys/class/ec_su_axb35
+
+read_file() { [[ -r $1 ]] && tr -d '\n' <"$1"; }
+
+hwmon_by_name() {
+  local h
+  for h in /sys/class/hwmon/hwmon*; do
+    [[ $(<"$h/name") == "$1" ]] && { echo "$h"; return; }
+  done
+}
+
+mode=$(read_file "$ec/apu/power_mode")
+driver=false
+[[ -d $ec ]] && driver=true
+
+gpu=$(hwmon_by_name amdgpu)
+cpu=$(hwmon_by_name k10temp)
+
+ppt_uw=$(read_file "$gpu/power1_average")
+[[ -z $ppt_uw ]] && ppt_uw=$(read_file "$gpu/power1_input")
+ppt_w=$(( ${ppt_uw:-0} / 1000000 ))
+
+cpu_temp=$(( $(read_file "$cpu/temp1_input" || echo 0) / 1000 ))
+gpu_temp=$(( $(read_file "$gpu/temp1_input" || echo 0) / 1000 ))
+sclk_mhz=$(( $(read_file "$gpu/freq1_input" || echo 0) / 1000000 ))
+
+fans=""
+for f in 1 2 3; do
+  rpm=$(read_file "$ec/fan$f/rpm")
+  [[ -n $rpm ]] && fans+="${fans:+,}$rpm"
+done
+
+profile=$(powerprofilesctl get 2>/dev/null)
+fan_floor=$(corsair-fans status 2>/dev/null)
+
+printf '{"driver":%s,"mode":"%s","pptW":%d,"cpuTemp":%d,"gpuTemp":%d,"sclkMhz":%d,"fans":[%s],"profile":"%s","fanFloor":%d}\n' \
+  "$driver" "$mode" "$ppt_w" "$cpu_temp" "$gpu_temp" "$sclk_mhz" "$fans" "$profile" "${fan_floor:-0}"
